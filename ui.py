@@ -25,13 +25,13 @@ class OlufsenUI(QWidget):
         self.threadpool = QThreadPool()
 
     def initUI(self):
-        self.setWindowTitle("OLUFSEN AI Assistant")
+        self.setWindowTitle("OLUFSEN")
         self.setGeometry(200, 200, 600, 700)
         self.setStyleSheet("background-color: #121212; color: white;")
         
         layout = QVBoxLayout()
         
-        self.title_label = QLabel("OLUFSEN AI", self)
+        self.title_label = QLabel("OLUFSEN", self)
         self.title_label.setFont(QFont("Arial", 20, QFont.Bold))
         self.title_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.title_label)
