@@ -21,6 +21,30 @@ from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 import threading
 from duckduckgo_search import ddg
 import requests
+import json
+import os
+
+MEMORY_FILE = "olufsen_memory.json"
+
+def load_memory():
+    """Load memory from a JSON file."""
+    if os.path.exists(MEMORY_FILE):
+        with open(MEMORY_FILE, "r") as file:
+            return json.load(file)
+    return {"user_name": "User", "chat_history": []}
+
+def save_memory(memory):
+    """Save memory to a JSON file."""
+    with open(MEMORY_FILE, "w") as file:
+        json.dump(memory, file, indent=4)
+
+memory = load_memory()
+
+def remember_user(name):
+    """Save the user's name."""
+    memory["user_name"] = name
+    save_memory(memory)
+
 # Stores past conversations (basic memory)
 chat_history = []
 speech_speed = 150  # Default speech speed
@@ -203,9 +227,22 @@ def execute_task(command):
 
 def chatbot_response(user_input, emotion="Neutral"):
     """Generates chatbot responses with memory and emotion-based adaptation."""
-    chat_history.append({"role": "user", "content": user_input})
-    if len(chat_history) > 5:
-        chat_history.pop(0)
+    
+    # Load user's name
+    user_name = memory.get("user_name", "User")
+
+    # Personalize greeting
+    if "my name is" in user_input:
+        name = user_input.split("my name is")[-1].strip()
+        remember_user(name)
+        return f"Nice to meet you, {name}! I'll remember your name."
+
+    # Use memory for chat history
+    memory["chat_history"].append({"role": "user", "content": user_input})
+    if len(memory["chat_history"]) > 5:
+        memory["chat_history"].pop(0)
+
+    # Modify input based on emotion
     if emotion == "happy":
         user_input = f"You seem happy! {user_input}"
     elif emotion == "sad":
@@ -214,11 +251,40 @@ def chatbot_response(user_input, emotion="Neutral"):
         user_input = f"You sound upset. I’ll keep things calm. {user_input}"
     elif emotion == "surprise":
         user_input = f"Wow, you seem surprised! {user_input}"
-    response = ollama.chat(model="llama2", messages=chat_history)
+
+    # Generate response using Llama 2
+    response = ollama.chat(model="llama2", messages=memory["chat_history"])
     bot_response = response['message']['content']
-    chat_history.append({"role": "assistant", "content": bot_response})
+    
+    # Save response in memory
+    memory["chat_history"].append({"role": "assistant", "content": bot_response})
+    save_memory(memory)
+
     return bot_response
 
+def list_services():
+    services = [
+        "Voice Command Recognition",
+        "Text-based Chatbot Interaction",
+        "Take Screenshot",
+        "Shutdown PC",
+        "Toggle Dark/Light Mode",
+        "System Health Check",
+        "Open Website (Web Browser)",
+        "Execute Custom Tasks",
+        "AI-Based Responses",
+        "Speech-to-Text Processing",
+        "Real-Time User Interaction"
+    ]
+    return "Available Services:\n" + "\n".join(services)
+
+def execute_task(command):
+    command = command.lower()
+    
+    if command == "list services":
+        return list_services()
+    
+    # Other command handling logic...
 
 def web_search(query):
     """Search DuckDuckGo and return the first result."""
