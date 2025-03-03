@@ -77,20 +77,23 @@ def speak(text):
     sound = sound + 8
     play(sound)
 
-def voice_input():
-    """Captures voice input and converts it to text."""
+def voice_input(self):
     recognizer = sr.Recognizer()
     with sr.Microphone() as source:
-        print("🎤 Listening...")
+        self.chat_display.append("<b>OLUFSEN:</b> Listening...")
+        recognizer.adjust_for_ambient_noise(source, duration=1)  # Adjust for noise
         try:
-            audio = recognizer.listen(source)
-            user_input = recognizer.recognize_google(audio)
-            print(f"User said: {user_input}")
-            return user_input.lower()
+            audio = recognizer.listen(source, timeout=10)  # Increased timeout
+            text = recognizer.recognize_google(audio)
+            self.chat_display.append(f"<b>You (Voice):</b> {text}")
+            self.process_input()
         except sr.UnknownValueError:
-            return "Sorry, I didn't catch that."
+            self.chat_display.append("<b>OLUFSEN:</b> Sorry, I couldn't understand.")
         except sr.RequestError:
-            return "Speech recognition service unavailable."
+            self.chat_display.append("<b>OLUFSEN:</b> Speech service unavailable.")
+        except sr.WaitTimeoutError:
+            self.chat_display.append("<b>OLUFSEN:</b> No voice detected. Try again.")
+
 
 def system_health():
     """Returns CPU, RAM, and Battery status."""

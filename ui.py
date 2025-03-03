@@ -2,7 +2,7 @@ from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QLa
 from PyQt5.QtGui import QFont
 from PyQt5.QtCore import Qt, QTimer, QRunnable, QThreadPool, QMetaObject, Q_ARG
 import sys
-import main  # Import your OLUFSEN AI backend file
+import main  
 import webbrowser
 import pyautogui
 import os
@@ -13,6 +13,10 @@ class Worker(QRunnable):
         super().__init__()
         self.text = text
         self.callback = callback
+
+    def run(self):
+        response = main.execute_task(self.text) or main.chatbot_response(self.text)
+        self.callback(response)  # Directly calling the callback function
 
     def run(self):
         response = main.execute_task(self.text) or main.chatbot_response(self.text)
