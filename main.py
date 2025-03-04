@@ -123,15 +123,24 @@ def manage_files(command):
             return f"Moved {parts[0]} to {parts[1]}"
         return "Invalid file path."
 
-
 def execute_task(command):
-    if "increase brightness to" in command or "decrease brightness to" in command:
+    command = command.lower()
+
+    if command == "check emotion":
+        detect_emotion_real_time()
+        return "Real-time emotion detection started. Press 'q' to exit."
+
+    elif command == "list services":
+        return list_services()
+
+    elif "increase brightness to" in command or "decrease brightness to" in command:
         try:
             brightness_level = int(command.split("to")[1].strip().replace("%", ""))
             sbc.set_brightness(brightness_level)
             return f"Brightness set to {brightness_level}%"
         except Exception:
             return "Failed to change brightness."
+
     elif "increase volume to" in command or "decrease volume to" in command:
         try:
             volume_level = int(command.split("to")[1].strip().replace("%", ""))
@@ -142,71 +151,75 @@ def execute_task(command):
             return f"Volume set to {volume_level}%"
         except Exception:
             return "Failed to change volume."
-        try:
-            volume_level = int(command.split("to")[1].strip().replace("%", ""))
-            ctypes.windll.user32.SendMessageW(0xFFFF, 0x319, 0, (0xA0000 | volume_level))
-            return f"Volume set to {volume_level}%"
-        except Exception:
-            return "Failed to change volume."
-    if "what is your name" in command or "who are you" in command:
+
+    elif command in ["what is your name", "who are you"]:
         return "My name is OLUFSEN."
-    elif "who is your owner" in command or "who created you" in command:
+
+    elif command in ["who is your owner", "who created you"]:
         return "My creator is Muhammad Saad."
-    elif "tell me a joke" in command:
+
+    elif command == "tell me a joke":
         return pyjokes.get_joke()
-    elif "shutdown" in command:
+
+    elif command == "shutdown":
         os.system("shutdown /s /t 1")
         return "Shutting down the PC..."
-    elif "restart" in command:
+
+    elif command == "restart":
         os.system("shutdown /r /t 1")
         return "Restarting the PC..."
-    elif "lock the pc" in command:
+
+    elif command == "lock the pc":
         os.system("rundll32.exe user32.dll,LockWorkStation")
         return "Locking the PC..."
-    if "what is your name" in command or "who are you" in command:
-        return "My name is OLUFSEN."
-    elif "who is your owner" in command or "who created you" in command:
-        return "My creator is Muhammad Saad."
-    if "check system health" in command:
+
+    elif command == "check system health":
         return system_health()
+
     elif "search file" in command or "delete file" in command or "move file" in command:
         return manage_files(command)
-    if "check system health" in command:
-        return system_health()
-        return system_health()
-    """Executes system tasks."""
-    command = command.lower()
-    if "open notepad" in command:
+
+    elif "open notepad" in command:
         os.system("notepad")
         return "Opening Notepad..."
+
     elif "open chrome" in command:
         os.system("start chrome")
         return "Opening Chrome..."
+
     elif "open word" in command:
         os.system("start winword")
         return "Opening Microsoft Word..."
+
     elif "open vscode" in command:
         os.system("code")
         return "Opening Visual Studio Code..."
+
     elif "open calculator" in command:
         os.system("calc")
         return "Opening Calculator..."
+
     elif "take a screenshot" in command:
         screenshot_path = os.path.join(os.path.expanduser("~"), "Desktop", "screenshot.png")
         pyautogui.screenshot(screenshot_path)
         return f"Screenshot saved at {screenshot_path}"
+
     elif "open youtube" in command:
         webbrowser.open("https://www.youtube.com")
         return "Opening YouTube..."
+
     elif "open google" in command:
         webbrowser.open("https://www.google.com")
         return "Opening Google..."
+
     elif "open github" in command:
         webbrowser.open("https://github.com")
         return "Opening GitHub..."
+
     elif "what time is it" in command or "current time" in command:
         now = datetime.datetime.now().strftime("%I:%M %p")
         return f"The current time is {now}"
+
     elif "search wikipedia for" in command:
         query = command.replace("search wikipedia for", "").strip()
         try:
@@ -216,6 +229,7 @@ def execute_task(command):
             return f"Multiple results found: {e.options[:3]}"
         except wikipedia.exceptions.PageError:
             return "No Wikipedia page found."
+
     elif "open" in command and ":" in command:
         try:
             filepath = command.split("open ")[1].strip()
@@ -223,10 +237,13 @@ def execute_task(command):
             return f"Opening {filepath}..."
         except Exception:
             return "❌ Unable to open the file. Check the path."
+
     elif "search for" in command or "look up" in command:
         query = command.replace("search for", "").replace("look up", "").strip()
         return web_search(query)
-    return None
+
+    return None  # Default case if no command matches
+
 
 def chatbot_response(user_input, emotion="Neutral"):
     """Generates chatbot responses with memory and emotion-based adaptation."""
@@ -277,17 +294,56 @@ def list_services():
         "Execute Custom Tasks",
         "AI-Based Responses",
         "Speech-to-Text Processing",
-        "Real-Time User Interaction"
+        "Real-Time User Interaction",
+        "File Management",
+        "Emotion Detection",
+        "Volume/Brightness Control",
+        "Real-Time Weather Updates",
+        "Search Wikipedia/Google",
+        "Open Applications/Files",
+        "Jokes and Fun Commands",
+        "AI-Based Memory Storage",
+        "Real-Time System Monitoring",
     ]
-    return "Available Services:\n" + "\n".join(services)
+    
+    for i, service in enumerate(services, start=1):
+        print(f"{i}. {service}")
 
-def execute_task(command):
-    command = command.lower()
-    
-    if command == "list services":
-        return list_services()
-    
-    # Other command handling logic...
+list_services()
+
+
+def detect_emotion_real_time():
+    """Opens a real-time emotion detection window using DeepFace."""
+    cap = cv2.VideoCapture(0)
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        # Convert frame to RGB for DeepFace
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        
+        try:
+            analysis = DeepFace.analyze(rgb_frame, actions=['emotion'], enforce_detection=False)
+            detected_emotion = analysis[0]['dominant_emotion']
+        except Exception:
+            detected_emotion = "Neutral"
+
+        # Display emotion on the frame
+        cv2.putText(frame, f"Emotion: {detected_emotion}", (20, 50), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+        cv2.imshow("Real-Time Emotion Detection", frame)
+
+        # Exit on 'q' key press
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+
 
 def web_search(query):
     """Search DuckDuckGo and return the first result."""
