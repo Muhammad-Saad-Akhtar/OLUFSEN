@@ -306,10 +306,17 @@ def list_services():
         "Real-Time System Monitoring",
     ]
     
-    for i, service in enumerate(services, start=1):
-        print(f"{i}. {service}")
+    return "\n".join([f"{i}. {service}" for i, service in enumerate(services, start=1)])
 
-list_services()
+# Ensure list_services() only runs when called inside execute_task()
+def execute_task(command):
+    command = command.lower()
+
+    if command == "list services":
+        return list_services()
+    
+    # Other task handling logic...
+    return None
 
 
 def detect_emotion_real_time():
