@@ -8,6 +8,7 @@ import pyautogui
 import os
 import speech_recognition as sr
 from main import speak, detect_emotion_real_time, manage_files, web_search, list_services
+import threading
 
 class Worker(QRunnable):
     def __init__(self, text, ui_instance):
