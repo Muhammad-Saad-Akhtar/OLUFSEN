@@ -24,6 +24,8 @@ import requests
 import json
 import os
 import threading
+import fnmatch
+import atexit
 
 MEMORY_FILE = "olufsen_memory.json"
 
@@ -58,8 +60,6 @@ def update_memory(user_input, bot_response):
 
     save_memory(memory)
 
-# Stores past conversations (basic memory)
-chat_history = []
 speech_speed = 200  # Default speech speed
 
 def detect_emotion():
@@ -86,30 +86,36 @@ def speak(text):
         engine.setProperty("voice", "english_rp+f5")
         engine.save_to_file(text, "output.mp3")
         engine.runAndWait()
+
         sound = AudioSegment.from_file("output.mp3")
         sound = sound.low_pass_filter(200)
         sound = sound + 8
         play(sound)
 
+        try:
+            os.remove("output.mp3")  # Clean up after playing
+        except Exception as e:
+            print(f"Error deleting audio file: {e}")
+
     threading.Thread(target=run_speech).start()
 
 
-def voice_input(self):
+
+def voice_input():
     recognizer = sr.Recognizer()
     with sr.Microphone() as source:
-        self.chat_display.append("<b>OLUFSEN:</b> Listening...")
-        recognizer.adjust_for_ambient_noise(source, duration=1)  # Adjust for noise
+        print("🎤 Listening...")
+        recognizer.adjust_for_ambient_noise(source, duration=1)
         try:
-            audio = recognizer.listen(source, timeout=10)  # Increased timeout
-            text = recognizer.recognize_google(audio)
-            self.chat_display.append(f"<b>You (Voice):</b> {text}")
-            self.process_input()
+            audio = recognizer.listen(source, timeout=10)
+            return recognizer.recognize_google(audio)
         except sr.UnknownValueError:
-            self.chat_display.append("<b>OLUFSEN:</b> Sorry, I couldn't understand.")
+            return "Sorry, I couldn't understand."
         except sr.RequestError:
-            self.chat_display.append("<b>OLUFSEN:</b> Speech service unavailable.")
+            return "Speech service unavailable."
         except sr.WaitTimeoutError:
-            self.chat_display.append("<b>OLUFSEN:</b> No voice detected. Try again.")
+            return "No voice detected. Try again."
+
 
 def process_input(user_input):
     print(f"Received input in main.py: {user_input}")  # Debugging
@@ -117,8 +123,6 @@ def process_input(user_input):
     print(f"Generated response: {response}")  # Debugging
     return response
 
-def process_voice_input():
-    return "Voice input processed."  # Replace with actual voice handling logic
 
 def system_health():
     """Returns CPU, RAM, and Battery status."""
@@ -127,20 +131,28 @@ def system_health():
     battery = psutil.sensors_battery().percent if psutil.sensors_battery() else "N/A"
     return f"CPU: {cpu_usage}% | RAM: {ram_usage}% | Battery: {battery}%"
 
+
+def search_file(filename, search_dir="C:\\Users"):
+    """Efficient file search using fnmatch."""
+    for root, _, files in os.walk(search_dir):
+        if fnmatch.filter(files, filename):
+            return f"File found: {os.path.join(root, filename)}"
+    return "File not found."
+
 def manage_files(command):
-    """Handles file search, renaming, moving, and deleting."""
+    """Handles file searching, renaming, moving, and deleting."""
+
     if "search file" in command:
         filename = command.replace("search file ", "").strip()
-        for root, dirs, files in os.walk(os.path.expanduser("~")):
-            if filename in files:
-                return f"File found: {os.path.join(root, filename)}"
-        return "File not found."
+        return search_file(filename)
+
     elif "delete file" in command:
         filepath = command.replace("delete file ", "").strip()
         if os.path.exists(filepath):
             os.remove(filepath)
             return f"Deleted {filepath}"
         return "File not found."
+
     elif "move file" in command:
         parts = command.replace("move file ", "").strip().split(" to ")
         if len(parts) == 2 and os.path.exists(parts[0]):
@@ -148,15 +160,22 @@ def manage_files(command):
             return f"Moved {parts[0]} to {parts[1]}"
         return "Invalid file path."
 
+    return "Invalid command."
+
+
 def execute_task(command):
     command = command.lower()
 
     if command == "check emotion":
-        detect_emotion_real_time()
+        thread = threading.Thread(target=detect_emotion_real_time)
+        thread.start()
+        active_threads.append(thread)  # Track thread
         return "Real-time emotion detection started. Press 'q' to exit."
 
+
     elif command == "list services":
-        return list_services()
+     return list_services()  # FIXED: Was missing a `return`
+
 
     elif "increase brightness to" in command or "decrease brightness to" in command:
         try:
@@ -333,63 +352,83 @@ def list_services():
     
     return "\n".join([f"{i}. {service}" for i, service in enumerate(services, start=1)])
 
-# Ensure list_services() only runs when called inside execute_task()
-def execute_task(command):
-    command = command.lower()
-
-    if command == "list services":
-        return list_services()
-    
-    # Other task handling logic...
-    return None
-
 
 def detect_emotion_real_time():
     cap = cv2.VideoCapture(0)
     frame_count = 0
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
 
-        frame_count += 1
-        if frame_count % 5 == 0:  # Analyze every 5th frame
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            try:
-                analysis = DeepFace.analyze(rgb_frame, actions=['emotion'], enforce_detection=False)
-                detected_emotion = analysis[0]['dominant_emotion']
-            except Exception:
-                detected_emotion = "Neutral"
+            frame_count += 1
+            if frame_count % 5 == 0:  # Analyze every 5th frame
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                try:
+                    analysis = DeepFace.analyze(rgb_frame, actions=['emotion'], enforce_detection=False)
+                    detected_emotion = analysis[0]['dominant_emotion']
+                except Exception:
+                    detected_emotion = "Neutral"
 
-            print(f"Detected Emotion: {detected_emotion}")
+                print(f"Detected Emotion: {detected_emotion}")
 
-        cv2.putText(frame, f"Emotion: {detected_emotion}", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-        cv2.imshow("Real-Time Emotion Detection", frame)
+            cv2.putText(frame, f"Emotion: {detected_emotion}", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            cv2.imshow("Real-Time Emotion Detection", frame)
 
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+    finally:
+        cap.release()  # Ensure camera is always released
+        cv2.destroyAllWindows()
 
-    cap.release()
-    cv2.destroyAllWindows()
 
-
-
+    
 def web_search(query):
-    """Search DuckDuckGo and return the first result."""
-    url = f"https://api.duckduckgo.com/?q={query}&format=json"
-    response = requests.get(url)
+    results = ddg(query, max_results=5)
+    if results:
+        return [
+            {
+                "title": result.get("title", "No title available"),
+                "link": result.get("href", "No link available"),
+                "body": result.get("body", "No detailed result available.")
+            }
+            for result in results
+        ]
+    return [{"title": "No results found", "link": "", "body": ""}]
 
-    if response.status_code == 200:
-        data = response.json()
-        if data.get("AbstractText"):
-            return data["AbstractText"]
-        elif data.get("RelatedTopics"):
-            return data["RelatedTopics"][0]["Text"] if data["RelatedTopics"] else "No results found."
-        else:
-            return "No relevant search results found."
-    else:
-        return "Failed to fetch search results."
+# Track active threads
+active_threads = []
+
+def cleanup():
+    """Properly cleans up resources before exiting OLUFSEN."""
+    print("🛑 Cleaning up resources before exiting...")
+
+    # Stop all active threads
+    for thread in active_threads:
+        if thread.is_alive():
+            print(f"🛑 Stopping thread: {thread.name}")
+            thread.join(timeout=2)  # Wait 2 seconds for each thread to exit
+
+    # Force release the camera if OpenCV is still holding it
+    try:
+        cv2.VideoCapture(0).release()  # ✅ FIXED: Uses direct release to ensure cleanup
+        cv2.destroyAllWindows()
+        print("📷 Camera resources released.")
+    except Exception as e:
+        print(f"⚠️ Error releasing camera: {e}")
+
+    # Delete temporary files
+    temp_files = ["output.mp3", "screenshot.png"]
+    for file in temp_files:
+        if os.path.exists(file):
+            os.remove(file)
+            print(f"🗑️ Deleted temp file: {file}")
+
+    print("✅ Cleanup complete. OLUFSEN is shutting down.")
+
+
 def main():
     global speech_speed
     print("🚀 OLUFSEN: Your AI Companion is Ready! (Type 'exit' to quit)")

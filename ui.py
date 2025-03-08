@@ -1,9 +1,11 @@
+from typing import Self
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QLabel, QTextEdit, QLineEdit
 from PyQt5.QtGui import QFont
 from PyQt5.QtCore import Qt, QTimer, QRunnable, QThreadPool, QMetaObject, Q_ARG, pyqtSlot
 import sys
 import os
 import threading
+from click import command
 import speech_recognition as sr
 import pyautogui
 import webbrowser
@@ -29,11 +31,16 @@ class Worker(QRunnable):
         QMetaObject.invokeMethod(self.ui_instance, "display_response", Qt.QueuedConnection, Q_ARG(str, response))
 
 class OlufsenUI(QWidget):
+ 
     def __init__(self):
         super().__init__()
         self.memory = load_memory()
         self.initUI()
         self.threadpool = QThreadPool()
+
+    def execute_task_async(self, command):
+        worker = Worker(command, self)  # Proper indentation
+        self.threadpool.start(worker)
 
     def initUI(self):
         self.setWindowTitle("OLUFSEN")
@@ -95,7 +102,7 @@ class OlufsenUI(QWidget):
 
         self.shutdown_button = QPushButton("Shutdown PC", self)
         self.shutdown_button.setStyleSheet("background-color: #D32F2F; border-radius: 10px; padding: 10px;")
-        self.shutdown_button.clicked.connect(self.shutdown_pc)
+        self.shutdown_button.clicked.connect(lambda: self.execute_task_async("shutdown"))
         layout.addWidget(self.shutdown_button)
 
         self.remember_user_button = QPushButton("Remember User", self)
@@ -128,10 +135,14 @@ class OlufsenUI(QWidget):
         self.chat_display.append("<b>OLUFSEN:</b> Screenshot taken!")
 
     def voice_input(self):
-        text = voice_input()
+     text = voice_input()
+     if text.lower() in ["sorry, i couldn't understand.", "speech service unavailable.", "no voice detected. try again."]:
+        self.chat_display.append(f"<b>OLUFSEN:</b> {text}")  # Notify user
+     else:
         self.chat_display.append(f"<b>You (Voice):</b> {text}")
         self.user_input.setText(text)
         self.process_input()
+
 
     def shutdown_pc(self):
         os.system("shutdown /s /t 1")
@@ -150,12 +161,19 @@ class OlufsenUI(QWidget):
         self.chat_display.append(f"<b>OLUFSEN:</b> {response}")
 
     def remember_user(self):
-        remember_user("John Doe")
-        self.chat_display.append("<b>OLUFSEN:</b> User remembered!")
+        user_name = self.user_input.text().strip()  # Get the user's actual input
+        if user_name:
+            remember_user(user_name)  #  Save the entered name
+            self.chat_display.append(f"<b>OLUFSEN:</b> I will remember you as {user_name}.")
+        else:
+            self.chat_display.append("<b>OLUFSEN:</b> Please enter your name first.")
 
     def refresh_status(self):
-        self.system_status.setText(f"System Status: {system_health()}")
-        QTimer.singleShot(5000, self.refresh_status)
+     self.system_status.setText(f"System Status: {system_health()}")
+     QTimer.singleShot(15000, self.refresh_status)  # Update every 15 seconds instead of 5
+
+
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
