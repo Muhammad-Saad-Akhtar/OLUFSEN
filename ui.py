@@ -2,13 +2,18 @@ from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QLa
 from PyQt5.QtGui import QFont
 from PyQt5.QtCore import Qt, QTimer, QRunnable, QThreadPool, QMetaObject, Q_ARG, pyqtSlot
 import sys
-import main  
-import webbrowser
-import pyautogui
 import os
-import speech_recognition as sr
-from main import speak, detect_emotion_real_time, manage_files, web_search, list_services
 import threading
+import speech_recognition as sr
+import pyautogui
+import webbrowser
+
+# ✅ Importing all functions from main.py
+from main import (
+    speak, detect_emotion_real_time, manage_files, web_search, list_services,
+    execute_task, chatbot_response, system_health, take_screenshot,
+    voice_input, process_input, remember_user, load_memory, save_memory
+)
 
 class Worker(QRunnable):
     def __init__(self, text, ui_instance):
@@ -17,24 +22,27 @@ class Worker(QRunnable):
         self.ui_instance = ui_instance
 
     def run(self):
-        response = main.execute_task(self.text) or main.chatbot_response(self.text)
+        try:
+            response = execute_task(self.text) or chatbot_response(self.text)
+        except Exception as e:
+            response = f"Error: {str(e)}"
         QMetaObject.invokeMethod(self.ui_instance, "display_response", Qt.QueuedConnection, Q_ARG(str, response))
 
 class OlufsenUI(QWidget):
     def __init__(self):
         super().__init__()
-        self.memory = main.load_memory()
+        self.memory = load_memory()
         self.initUI()
         self.threadpool = QThreadPool()
 
     def initUI(self):
         self.setWindowTitle("OLUFSEN")
-        self.setGeometry(200, 200, 600, 700)
+        self.setGeometry(200, 200, 600, 800)
         self.setStyleSheet("background-color: #121212; color: white;")
         
         layout = QVBoxLayout()
         
-        self.title_label = QLabel(f"OLUFSEN")
+        self.title_label = QLabel("OLUFSEN")
         self.title_label.setFont(QFont("Arial", 20, QFont.Bold))
         self.title_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.title_label)
@@ -67,9 +75,9 @@ class OlufsenUI(QWidget):
 
         self.detect_emotion_button = QPushButton("Detect Real-Time Emotion", self)
         self.detect_emotion_button.setStyleSheet("background-color: #E91E63; border-radius: 10px; padding: 10px;")
-        self.detect_emotion_button.clicked.connect(detect_emotion_real_time)
+        self.detect_emotion_button.clicked.connect(lambda: threading.Thread(target=detect_emotion_real_time).start())
         layout.addWidget(self.detect_emotion_button)
-        
+
         self.file_management_button = QPushButton("File Management", self)
         self.file_management_button.setStyleSheet("background-color: #2196F3; border-radius: 10px; padding: 10px;")
         self.file_management_button.clicked.connect(self.file_management)
@@ -90,13 +98,18 @@ class OlufsenUI(QWidget):
         self.shutdown_button.clicked.connect(self.shutdown_pc)
         layout.addWidget(self.shutdown_button)
 
+        self.remember_user_button = QPushButton("Remember User", self)
+        self.remember_user_button.setStyleSheet("background-color: #FFC107; border-radius: 10px; padding: 10px;")
+        self.remember_user_button.clicked.connect(self.remember_user)
+        layout.addWidget(self.remember_user_button)
+
         self.system_status = QLabel("System Status: Loading...", self)
         self.system_status.setFont(QFont("Arial", 12))
         layout.addWidget(self.system_status)
         
         self.refresh_status()
         self.setLayout(layout)
-    
+
     def process_input(self):
         user_text = self.user_input.text()
         if user_text:
@@ -108,34 +121,24 @@ class OlufsenUI(QWidget):
     @pyqtSlot(str)
     def display_response(self, response):
         self.chat_display.append(f"<b>OLUFSEN:</b> {response}")
-        speak(response)  # Enable voice response
+        threading.Thread(target=speak, args=(response,)).start()
     
     def take_screenshot(self):
-        screenshot_path = os.path.join(os.path.expanduser("~"), "Desktop", "screenshot.png")
-        pyautogui.screenshot(screenshot_path)
-        self.chat_display.append(f"<b>OLUFSEN:</b> Screenshot saved at {screenshot_path}")
+        take_screenshot()
+        self.chat_display.append("<b>OLUFSEN:</b> Screenshot taken!")
 
     def voice_input(self):
-        recognizer = sr.Recognizer()
-        with sr.Microphone() as source:
-            self.chat_display.append("<b>OLUFSEN:</b> Listening...")
-            try:
-                audio = recognizer.listen(source, timeout=5)  
-                text = recognizer.recognize_google(audio)
-                self.chat_display.append(f"<b>You (Voice):</b> {text}")
-                self.user_input.setText(text)
-                self.process_input()
-            except sr.UnknownValueError:
-                self.chat_display.append("<b>OLUFSEN:</b> Sorry, I couldn't understand.")
-            except sr.RequestError:
-                self.chat_display.append("<b>OLUFSEN:</b> Speech service unavailable.")
+        text = voice_input()
+        self.chat_display.append(f"<b>You (Voice):</b> {text}")
+        self.user_input.setText(text)
+        self.process_input()
 
     def shutdown_pc(self):
         os.system("shutdown /s /t 1")
         self.chat_display.append("<b>OLUFSEN:</b> Shutting down the PC...")
 
     def file_management(self):
-        response = manage_files("search file test.txt")  # Example usage
+        response = manage_files("search file test.txt")
         self.chat_display.append(f"<b>OLUFSEN:</b> {response}")
 
     def web_search(self):
@@ -146,9 +149,13 @@ class OlufsenUI(QWidget):
         response = list_services()
         self.chat_display.append(f"<b>OLUFSEN:</b> {response}")
 
+    def remember_user(self):
+        remember_user("John Doe")
+        self.chat_display.append("<b>OLUFSEN:</b> User remembered!")
+
     def refresh_status(self):
-        self.system_status.setText(f"System Status: {main.system_health()}")
-        QTimer.singleShot(5000, self.refresh_status) 
+        self.system_status.setText(f"System Status: {system_health()}")
+        QTimer.singleShot(5000, self.refresh_status)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
