@@ -1,3 +1,6 @@
+from winsound import PlaySound
+from gtts import gTTS
+from joblib import Memory
 import ollama
 import pyttsx3
 import speech_recognition as sr
@@ -26,6 +29,8 @@ import os
 import threading
 import fnmatch
 import atexit
+import concurrent.futures
+
 
 MEMORY_FILE = "olufsen_memory.json"
 
@@ -36,69 +41,74 @@ def load_memory():
             return json.load(file)
     return {"user_name": "User", "chat_history": []}
 
-def save_memory(memory):
-    """Save memory to a JSON file."""
-    with open(MEMORY_FILE, "w") as file:
-        json.dump(memory, file, indent=4)
+def save_memory(new_entry):
+    memory_file = "olufsen_memory.json"
 
-memory = load_memory()
+    # Load existing memory
+    if os.path.exists(memory_file):
+        with open(memory_file, "r", encoding="utf-8") as f:
+            try:
+                chat_memory = json.load(f)
+            except json.JSONDecodeError:
+                chat_memory = []
+    else:
+        chat_memory = []
+
+    # Append new entry and limit history size
+    chat_memory.append(new_entry)
+    chat_memory = chat_memory[-50:]  # Keep only last 50 interactions
+
+    # Save updated memory
+    with open(memory_file, "w", encoding="utf-8") as f:
+        json.dump(chat_memory, f, indent=4)
+
 
 def remember_user(name):
     """Save the user's name."""
-    memory["user_name"] = name
-    save_memory(memory)
+    Memory["user_name"] = name
+    save_memory(Memory)
 
 def update_memory(user_input, bot_response):
     """Stores and manages chat history for better conversation flow."""
-    memory["chat_history"].append({"role": "user", "content": user_input})
-    memory["chat_history"].append({"role": "assistant", "content": bot_response})
+    Memory["chat_history"].append({"role": "user", "content": user_input})
+    Memory["chat_history"].append({"role": "assistant", "content": bot_response})
 
     # Keep important context while avoiding memory bloat
-    if len(memory["chat_history"]) > 10:
-        summary = "Summary of previous conversation: " + " ".join([msg["content"] for msg in memory["chat_history"][:5]])
-        memory["chat_history"] = [{"role": "system", "content": summary}] + memory["chat_history"][-5:]
+    if len(Memory["chat_history"]) > 10:
+        summary = "Summary of previous conversation: " + " ".join([msg["content"] for msg in Memory["chat_history"][:5]])
+        Memory["chat_history"] = [{"role": "system", "content": summary}] + Memory["chat_history"][-5:]
 
-    save_memory(memory)
+    save_memory(Memory)
 
 speech_speed = 200  # Default speech speed
 
-def detect_emotion():
-    """Captures a single frame and detects emotion."""
-    cap = cv2.VideoCapture(0)
-    ret, frame = cap.read()
-    cap.release()
-    cv2.destroyAllWindows()
-    if not ret:
-        return "Neutral"
-    try:
-        analysis = DeepFace.analyze(frame, actions=['emotion'], enforce_detection=False)
-        detected_emotion = analysis[0]['dominant_emotion']
-    except Exception:
-        detected_emotion = "Neutral"
-    return detected_emotion
+# def detect_emotion():
+#     """Captures a single frame and detects emotion."""
+#     cap = cv2.VideoCapture(0)
+#     ret, frame = cap.read()
+#     cap.release()
+#     cv2.destroyAllWindows()
+#     if not ret:
+#         return "Neutral"
+#     try:
+#         analysis = DeepFace.analyze(frame, actions=['emotion'], enforce_detection=False)
+#         detected_emotion = analysis[0]['dominant_emotion']
+#     except Exception:
+#         detected_emotion = "Neutral"
+#     return detected_emotion
 
 
 def speak(text):
-    def run_speech():
-        engine = pyttsx3.init()
-        engine.setProperty("rate", speech_speed)
-        engine.setProperty("volume", 1.0)
-        engine.setProperty("voice", "english_rp+f5")
-        engine.save_to_file(text, "output.mp3")
-        engine.runAndWait()
+    tts = gTTS(text=text, lang="en")
+    tts.save("output.mp3")
 
-        sound = AudioSegment.from_file("output.mp3")
-        sound = sound.low_pass_filter(200)
-        sound = sound + 8
-        play(sound)
+    sound = AudioSegment.from_mp3("output.mp3")
+    sound = sound.low_pass_filter(500)  # Increase cutoff for clarity
+    sound.export("output_filtered.mp3", format="mp3")
 
-        try:
-            os.remove("output.mp3")  # Clean up after playing
-        except Exception as e:
-            print(f"Error deleting audio file: {e}")
-
-    threading.Thread(target=run_speech).start()
-
+    PlaySound("output_filtered.mp3")
+    os.remove("output.mp3")
+    os.remove("output_filtered.mp3")
 
 
 def voice_input():
@@ -132,11 +142,21 @@ def system_health():
     return f"CPU: {cpu_usage}% | RAM: {ram_usage}% | Battery: {battery}%"
 
 
-def search_file(filename, search_dir="C:\\Users"):
-    """Efficient file search using fnmatch."""
-    for root, _, files in os.walk(search_dir):
-        if fnmatch.filter(files, filename):
-            return f"File found: {os.path.join(root, filename)}"
+def search_file_mt(filename, search_dir="C:\\Users"):
+    def search_worker(subdir):
+        for root, _, files in os.walk(subdir):
+            if filename in files:
+                return os.path.join(root, filename)
+        return None
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        subdirs = [os.path.join(search_dir, d) for d in os.listdir(search_dir) if os.path.isdir(os.path.join(search_dir, d))]
+        results = executor.map(search_worker, subdirs)
+    
+    for result in results:
+        if result:
+            return f"File found: {result}"
+    
     return "File not found."
 
 def manage_files(command):
@@ -144,7 +164,7 @@ def manage_files(command):
 
     if "search file" in command:
         filename = command.replace("search file ", "").strip()
-        return search_file(filename)
+        return search_file_mt(filename)
 
     elif "delete file" in command:
         filepath = command.replace("delete file ", "").strip()
@@ -293,7 +313,7 @@ def chatbot_response(user_input, emotion="Neutral"):
     """Generates chatbot responses with memory and emotion-based adaptation."""
     
     # Load user's name
-    user_name = memory.get("user_name", "User")
+    user_name = Memory.get("user_name", "User")
 
     # Personalize greeting
     if "my name is" in user_input:
@@ -302,9 +322,9 @@ def chatbot_response(user_input, emotion="Neutral"):
         return f"Nice to meet you, {name}! I'll remember your name."
 
     # Use memory for chat history
-    memory["chat_history"].append({"role": "user", "content": user_input})
-    if len(memory["chat_history"]) > 5:
-        memory["chat_history"].pop(0)
+    Memory["chat_history"].append({"role": "user", "content": user_input})
+    if len(Memory["chat_history"]) > 5:
+        Memory["chat_history"].pop(0)
 
     # Modify input based on emotion
     if emotion == "happy":
@@ -317,12 +337,12 @@ def chatbot_response(user_input, emotion="Neutral"):
         user_input = f"Wow, you seem surprised! {user_input}"
 
     # Generate response using Llama 2
-    response = ollama.chat(model="llama2", messages=memory["chat_history"])
+    response = ollama.chat(model="llama2", messages=Memory["chat_history"])
     bot_response = response['message']['content']
     
     # Save response in memory
-    memory["chat_history"].append({"role": "assistant", "content": bot_response})
-    save_memory(memory)
+    Memory["chat_history"].append({"role": "assistant", "content": bot_response})
+    save_memory(Memory)
 
     return bot_response
 
@@ -354,34 +374,31 @@ def list_services():
 
 
 def detect_emotion_real_time():
-    cap = cv2.VideoCapture(0)
-    frame_count = 0
+    cap = cv2.VideoCapture(0)  # Open the webcam
+    if not cap.isOpened():
+        print("Error: Could not access the webcam.")
+        return
+    
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("Error: Failed to capture frame.")
+            break  # Exit loop if frame not captured
+        
+        detected_emotion = detected_emotion(frame)
+        detected_emotion = detected_emotion if detected_emotion else "Unknown"
 
-    try:
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
+        cv2.putText(frame, f"Emotion: {detected_emotion}", (20, 50), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
-            frame_count += 1
-            if frame_count % 5 == 0:  # Analyze every 5th frame
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                try:
-                    analysis = DeepFace.analyze(rgb_frame, actions=['emotion'], enforce_detection=False)
-                    detected_emotion = analysis[0]['dominant_emotion']
-                except Exception:
-                    detected_emotion = "Neutral"
+        cv2.imshow("Emotion Detection", frame)
 
-                print(f"Detected Emotion: {detected_emotion}")
+        if cv2.waitKey(1) & 0xFF == ord('q'):  # Press 'q' to exit
+            break
 
-            cv2.putText(frame, f"Emotion: {detected_emotion}", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-            cv2.imshow("Real-Time Emotion Detection", frame)
+    cap.release()
+    cv2.destroyAllWindows()
 
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-    finally:
-        cap.release()  # Ensure camera is always released
-        cv2.destroyAllWindows()
 
 
     
@@ -401,32 +418,14 @@ def web_search(query):
 # Track active threads
 active_threads = []
 
-def cleanup():
-    """Properly cleans up resources before exiting OLUFSEN."""
-    print("🛑 Cleaning up resources before exiting...")
+import threading
 
-    # Stop all active threads
-    for thread in active_threads:
-        if thread.is_alive():
-            print(f"🛑 Stopping thread: {thread.name}")
-            thread.join(timeout=2)  # Wait 2 seconds for each thread to exit
+def cleanup_threads():
+    for thread in threading.enumerate():
+        if thread is not threading.main_thread():
+            thread.join(timeout=2)  # Allow up to 2 seconds for threads to exit gracefully
 
-    # Force release the camera if OpenCV is still holding it
-    try:
-        cv2.VideoCapture(0).release()  # ✅ FIXED: Uses direct release to ensure cleanup
-        cv2.destroyAllWindows()
-        print("📷 Camera resources released.")
-    except Exception as e:
-        print(f"⚠️ Error releasing camera: {e}")
-
-    # Delete temporary files
-    temp_files = ["output.mp3", "screenshot.png"]
-    for file in temp_files:
-        if os.path.exists(file):
-            os.remove(file)
-            print(f"🗑️ Deleted temp file: {file}")
-
-    print("✅ Cleanup complete. OLUFSEN is shutting down.")
+atexit.register(cleanup_threads)  # Ensures cleanup on exit
 
 
 def main():
@@ -459,7 +458,7 @@ def main():
             print(f"🔹 {task_response}")
             speak(task_response)
             continue
-        detected_emotion = detect_emotion()
+        detected_emotion = detected_emotion()
         print(f"🧠 Detected Emotion: {detected_emotion}")
         bot_response = chatbot_response(user_input, detected_emotion)
         print(f"OLUFSEN: {bot_response}")
