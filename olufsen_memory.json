@@ -3,11 +3,19 @@
     "chat_history": [
         {
             "role": "user",
-            "content": "detect emotions"
+            "content": "hi"
         },
         {
             "role": "assistant",
-            "content": ""
+            "content": "I didn't understand that."
+        },
+        {
+            "role": "user",
+            "content": "lama"
+        },
+        {
+            "role": "assistant",
+            "content": "I didn't understand that."
         }
     ]
 }
